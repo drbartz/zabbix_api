@@ -191,7 +191,19 @@ class api:
 		if "result" in self.obj:
 			test=int(self.obj["result"])
 		return test
-	
+
+	''' 
+	return the if the template_name exist (true/false)
+	'''
+	def Template_Exist(self,hostgroup_name):
+		test=False	
+		self.obj["result"]={}
+		self.generic_method("template.exists", {  "name": hostgroup_name } )
+		if "result" in self.obj:
+			test=int(self.obj["result"])
+		return test
+
+
 	''' 
 	return the template_id to a template_name
 	'''
@@ -279,11 +291,11 @@ class api:
 	''' 
 	Add a template to a hostname
 	'''
-	def Host_Update_Add_Template_by_Name(self,hostname, templatename):
-		templateid = self.Template_Get_Templateid_by_Name(templatename)
-		if not templateid == 0:
-			hostid = self.Host_Get_HostId_by_Hostname(hostname)
-			if not hostid == 0:
+	def Host_Update_Add_Template_by_Name(self, hostname, templatename):
+		if self.Template_Exist(templatename):
+			templateid = self.Template_Get_Templateid_by_Name(templatename)
+			if self.Hostname_Exists(hostname):
+				hostid = self.Host_Get_HostId_by_Hostname(hostname)
 				Template_List=self.Host_Get_TemplateIdList_by_Hostname(hostname)
 				if int(templateid) in Template_List: 
 					print "OK: Hostname[%s] already has the template [%s]" % (hostname,templatename)
