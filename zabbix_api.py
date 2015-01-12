@@ -93,7 +93,19 @@ class api:
 					"event created by active agent auto-registration": 2, 
 					"internal event": 3 
 				}
-			}
+		}
+
+		# translate from: https://www.zabbix.com/documentation/2.4/manual/api/reference/trigger/object
+		self.api_translate["trigger"] = {
+				"priority": { 
+					"(default) not classified":	0,
+					"information":	1,
+					"warning":	2,
+					"average":	3,
+					"high":	4,
+					"disater":	5,
+				}
+		}
 
 	''' 
 	Authenticate and use the token on the next request 
@@ -313,6 +325,45 @@ class api:
 				
 
 	''' 
+	Get zabbix status
+	'''
+	def get_zabbix_statu(self):
+		Priority={}
+		for item in self.api_translate["trigger"]["priority"]:
+			Priority[self.api_translate["trigger"]["priority"][item]]=item
+		self.status={}
+		#self.generic_method("item.get",{ "output": "extend"})
+		#for response in zabbix_api.obj["result"]:
+		#	print "ITEM: type:[%s] - status[%s]" % (response["type"], response["status"])
+		
+		self.generic_method("trigger.get",{ "output": ["priority", "value"]})
+		self.status["trigger"]={}
+		for response in zabbix_api.obj["result"]:
+			priority = Priority[int(response["priority"])]
+			value = int(response["value"])
+			Status="NA"
+			if value == 0: Status="OK"
+			if value == 1: Status="ERR"
+			if not priority in self.status["trigger"]: self.status["trigger"][priority]={}
+			if not Status in self.status["trigger"][priority]: self.status["trigger"][priority][Status]=0
+			self.status["trigger"][priority][Status]+=1
+			#print "trigger: priority[%s] - value[%s]" % (response["priority"], response["value"])
+		#print self.status
+
+		self.generic_method("host.get",{ "output": ["status"]})
+		self.status["host"]={}
+		for response in zabbix_api.obj["result"]:
+			value = int(response["status"])
+			Status="NA"
+			if value == 0: Status="OK"
+			if value == 1: Status="ERR"
+			if not Status in self.status["host"]: self.status["host"][Status]=0
+			self.status["host"][Status]+=1
+			#print "host: status[%s] " % (response["status"])
+		#print self.status["host"]
+		print self.status
+
+	''' 
 	Generic request method
 	'''
 	def generic_method(self, method, params):
@@ -329,6 +380,7 @@ class api:
 #####print zabbix_api.api_translate
 hostname = socket.gethostname()
 
+print socket.gethostname().split(".")[0]
 zabbix_api = api()
 zabbix_api.login("admin", "zabbix")
 zabbix_api.Action_Create_Autoregister_by_Name("Linux autoregistration", "Linux", "Template OS Linux")
@@ -337,3 +389,4 @@ zabbix_api.Host_Update_Add_Template_by_Name(hostname, "Template App Zabbix Serve
 zabbix_api.Host_Update_Add_Template_by_Name(hostname, "Template OS Linux")
 zabbix_api.Create_Hostgroup("Monitoring")
 zabbix_api.Host_Update_Add_HostGroup_by_Name(hostname,"Monitoring")
+zabbix_api.get_zabbix_statu()
