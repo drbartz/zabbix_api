@@ -354,13 +354,12 @@ class api:
             Host=response["host"]
             HostName=response["name"]
             if not "host" in self.history: self.history["host"]={}
-            if not HostId in self.history["template"]: self.history["template"][HostId]={"host":Host, "name":HostName}
+            if not HostId in self.history["host"]: self.history["host"][HostId]={"host":Host, "name":HostName}
 
         # read all triggers
         #{u'status': u'0', u'description': u'Zabbix agent on {HOST.NAME} is unreachable for 5 minutes', u'state': u'0', u'url': u'', u'type': u'0', u'templateid': u'10047', u'lastchange': u'1450299270', u'value': u'1', u'priority': u'3', u'triggerid': u'13491', u'flags': u'0', u'comments': u'', u'error': u'', u'expression': u'{12900}=1'}
         self.generic_method("trigger.get",{ "output": ["triggerid", "templateid", "lastchange", "description", "value", "priority"], "selectGroups":"groupid", "selectHosts":"hostid"})
         for response in zabbix_api.obj["result"]:
-            print response
             TriggerId=response["triggerid"]
             TemplateId=response["templateid"]
             LastChange=response["lastchange"]
@@ -369,29 +368,42 @@ class api:
             Priority=response["priority"]
             if not "trigger" in self.history: self.history["trigger"]={}
             if not TriggerId in self.history["trigger"]: self.history["trigger"][TriggerId]={"templateid":TemplateId, "lastchange":LastChange, "value":Value, "priority":Priority, "description": Description}
-            #if LastChange>self.history["trigger"][TriggerId]["lastchange"]: self.history["trigger"][TriggerId]={"templateid":TemplateId, "lastchange":LastChange, "value":Value, "priority":Priority, "description": Description}
-            self.history["trigger"][TriggerId]={"templateid":TemplateId, "lastchange":LastChange, "value":Value, "priority":Priority, "description": Description}
+            for Hosts in response["hosts"]:
+                HostId=Hosts["hostid"]
+                if HostId in self.history["host"]: 
+                    HostName=self.history["host"][HostId]["name"]
+                else:
+                    HostName="N/A"
+                self.history["trigger"][TriggerId]={"templateid":TemplateId, "lastchange":LastChange, "value":Value, "priority":Priority, "description": Description, "hostname":HostName}
+                if int(Value)==1: print "Active trigger [%s] on host [%s] with priority [%s]. Last change [%s]" % (Description, HostName, Priority, LastChange)
     
         # read all events info
-        self.generic_method("event.get",{ "output": "extend", "selectHosts":"extend"  })
+        self.generic_method("event.get",{ "output": "extend", "selectHosts":"extend", "sortfield": ["eventid"] })
         for response in zabbix_api.obj["result"]:
             #print response
             # ObjectId = TriggerId
-            ObjectId=response["objectid"]
             EventId=response["eventid"]
             EventTime=response["clock"]
-            #Time=strftime("%d/%m/%y %H:%M:%S",localtime(int(response["clock"])))
+            TriggerId=response["objectid"]
             #self.generic_method("trigger.get",{ "output": "extend", "triggerids": response["objectid"] })
-            TemplateId=self.history["trigger"][ObjectId]["templateid"]
+            TemplateId=self.history["trigger"][TriggerId]["templateid"]
             if TemplateId in self.history["template"]:
                 TemplateHost=self.history["template"][TemplateId]["host"]
             else:
                 TemplateHost="N/A"
-            TriggerValue=self.history["trigger"][ObjectId]["value"]
-            TriggerPriority=self.history["trigger"][ObjectId]["priority"]
-            TriggerLastChange=self.history["trigger"][ObjectId]["lastchange"]
-            TriggerDescription=self.history["trigger"][ObjectId]["description"]
-            print "%s - eventid[%s] - templateid[%s] - Host[%s] - TriggerId[%s] - TriggerValue[%s] - TriggerPriority[%s] - TriggerLastChange[%s] - TriggerDescription[%s]"  % (EventTime, EventId, TemplateId, TemplateHost, ObjectId, TriggerValue, TriggerPriority, TriggerLastChange, TriggerDescription)
+            TriggerValue=self.history["trigger"][TriggerId]["value"]
+            TriggerPriority=self.history["trigger"][TriggerId]["priority"]
+            TriggerLastChange=self.history["trigger"][TriggerId]["lastchange"]
+            TriggerDescription=self.history["trigger"][TriggerId]["description"]
+            if "lastdata" not in self.history: self.history["lastdata"]={}
+            if "event" not in self.history["lastdata"]: self.history["lastdata"]["event"]=0
+            if EventId>self.history["lastdata"]["event"]:
+                Time=strftime("%d/%m/%y %H:%M:%S",localtime(int(response["clock"])))
+                LastTime=strftime("%d/%m/%y %H:%M:%S",localtime(int(TriggerLastChange)))
+                print "%s - eventid[%s] - templateid[%s] - Host[%s] - TriggerId[%s] - TriggerValue[%s] - TriggerPriority[%s] - TriggerLastChange[%s] - TriggerDescription[%s]"  % (Time, EventId, TemplateId, TemplateHost, TriggerId, TriggerValue, TriggerPriority, LastTime, TriggerDescription)
+                self.history["lastdata"]["event"]=EventId
+            else:
+                print EventId
         
     '''
     Load history
@@ -432,11 +444,11 @@ print socket.gethostname().split(".")[0]
 zabbix_api = api()
 zabbix_api.login("admin", "zabbix")
 zabbix_api.history_load(".api_history")
-zabbix_api.Action_Create_Autoregister_by_Name("Linux autoregistration", "Linux", "Template OS Linux")
-zabbix_api.Action_Create_Autoregister_by_Name("Windows autoregistration", "Windows", "Template OS Windows")
-zabbix_api.Host_Update_Add_Template_by_Name(hostname, "Template App Zabbix Server")
-zabbix_api.Host_Update_Add_Template_by_Name(hostname, "Template OS Linux")
-zabbix_api.Create_Hostgroup("Monitoring")
-zabbix_api.Host_Update_Add_HostGroup_by_Name(hostname,"Monitoring")
+#zabbix_api.Action_Create_Autoregister_by_Name("Linux autoregistration", "Linux", "Template OS Linux")
+#zabbix_api.Action_Create_Autoregister_by_Name("Windows autoregistration", "Windows", "Template OS Windows")
+#zabbix_api.Host_Update_Add_Template_by_Name(hostname, "Template App Zabbix Server")
+#zabbix_api.Host_Update_Add_Template_by_Name(hostname, "Template OS Linux")
+#zabbix_api.Create_Hostgroup("Monitoring")
+#zabbix_api.Host_Update_Add_HostGroup_by_Name(hostname,"Monitoring")
 zabbix_api.get_zabbix_statu()
 zabbix_api.history_save(".api_history")
