@@ -328,6 +328,60 @@ class api:
                 
 
     ''' 
+    Load Zabbix template info
+    '''
+    def get_zabbix_template(self, TemplateId):
+        if not "template" in self.history: self.history["template"]={}
+        if not TemplateId in self.history["template"]:
+            print "looking for template [%s]" % (TemplateId)
+            self.generic_method("template.get",{ "output": "extend", "templateid":TemplateId})
+            TemplateHost="N/A"
+            for result in zabbix_api.obj["result"]:
+                if TemplateId == result["templateid"]:
+                    TemplateHost=result["host"]
+            #print "templateid[%s] - name[%s]" % ( TemplateId, TemplateHost )
+            self.history["template"][TemplateId]={"host":TemplateHost}
+
+    ''' 
+    Load Zabbix host info
+    '''
+    def get_zabbix_host(self, HostId):
+        if not "host" in self.history: self.history["host"]={}
+        if not HostId in self.history["host"]:
+            print "looking for hostid [%s]" % (HostId)
+            self.generic_method("host.get", {"output": "extend", "hostid":HostId})
+            #self.status["host"]={}
+            #{u'available': u'1', u'maintenance_type': u'0', u'ipmi_errors_from': u'0', u'ipmi_username': u'', u'snmp_disable_until': u'0', u'ipmi_authtype': u'0', u'ipmi_disable_until': u'0', u'lastaccess': u'0', u'snmp_error': u'', u'ipmi_privilege': u'2', u'jmx_error': u'', u'jmx_available': u'0', u'maintenanceid': u'0', u'snmp_available': u'0', u'status': u'0', u'description': u'', u'host': u'zabbix-server', u'disable_until': u'0', u'ipmi_password': u'', u'templateid': u'0', u'ipmi_available': u'0', u'maintenance_status': u'0', u'snmp_errors_from': u'0', u'ipmi_error': u'', u'proxy_hostid': u'0', u'hostid': u'10105', u'name': u'zabbix-server', u'jmx_errors_from': u'0', u'jmx_disable_until': u'0', u'flags': u'0', u'error': u'', u'maintenance_from': u'0', u'errors_from': u'0'}
+            Host="N/A"
+            HostName="N/A"
+            for response in zabbix_api.obj["result"]:
+                if HostId==response["hostid"]:
+                    Host=response["host"]
+                    HostName=response["name"]
+            self.history["host"][HostId]={"host":Host, "name":HostName}
+
+    ''' 
+    Load Zabbix trigger info
+    '''
+    def get_zabbix_trigger(self, TriggerId):
+        if not "trigger" in self.history: self.history["trigger"]={}
+        if not TriggerId in self.history["trigger"]:
+            print "looking for triggerid [%s]" % (TriggerId)
+            self.history["trigger"][TriggerId]={"templateid":"N/A", "lastchange":"N/A", "value":"N/A", "priority":"N/A", "description": "N/A", "host": "N/A"}
+            self.generic_method("trigger.get",{ "output": ["triggerid", "templateid", "lastchange", "description", "value", "priority"], "selectGroups":"groupid", "selectHosts":"hostid"})
+            for response in zabbix_api.obj["result"]:
+                if TriggerId==response["triggerid"]:
+                    self.history["trigger"][TriggerId]["templateid"]=response["templateid"]
+                    self.get_zabbix_template(response["templateid"])
+                    self.history["trigger"][TriggerId]["lastchange"]=response["lastchange"]
+                    self.history["trigger"][TriggerId]["description"]=response["description"]
+                    self.history["trigger"][TriggerId]["value"]=response["value"]
+                    self.history["trigger"][TriggerId]["priority"]=response["priority"]
+                    for Hosts in response["hosts"]:
+                        self.get_zabbix_host(Hosts["hostid"])
+                        self.history["trigger"][TriggerId]["host"]=self.history["host"][Hosts["hostid"]]["host"]
+    
+    ''' 
     Get zabbix status
     '''
     def get_zabbix_statu(self):
@@ -335,55 +389,22 @@ class api:
         for item in self.api_translate["trigger"]["priority"]:
             Priority[self.api_translate["trigger"]["priority"][item]]=item
 
-        # read all templates info
-        self.generic_method("template.get",{ "output": "extend"})
-        for result in zabbix_api.obj["result"]:
-            TemplateId=result["templateid"]
-            TemplateHost=result["host"]
-            if not "template" in self.history: self.history["template"]={}
-            if not TemplateId in self.history["template"]: self.history["template"][TemplateId]={"host":TemplateHost}
-            #print "templateid[%s] - name[%s]" % ( TemplateId, TemplateHost )
-
-        #
-        # Read all hosts information
-        self.generic_method("host.get", {"output": "extend"})
-        #self.status["host"]={}
-        #{u'available': u'1', u'maintenance_type': u'0', u'ipmi_errors_from': u'0', u'ipmi_username': u'', u'snmp_disable_until': u'0', u'ipmi_authtype': u'0', u'ipmi_disable_until': u'0', u'lastaccess': u'0', u'snmp_error': u'', u'ipmi_privilege': u'2', u'jmx_error': u'', u'jmx_available': u'0', u'maintenanceid': u'0', u'snmp_available': u'0', u'status': u'0', u'description': u'', u'host': u'zabbix-server', u'disable_until': u'0', u'ipmi_password': u'', u'templateid': u'0', u'ipmi_available': u'0', u'maintenance_status': u'0', u'snmp_errors_from': u'0', u'ipmi_error': u'', u'proxy_hostid': u'0', u'hostid': u'10105', u'name': u'zabbix-server', u'jmx_errors_from': u'0', u'jmx_disable_until': u'0', u'flags': u'0', u'error': u'', u'maintenance_from': u'0', u'errors_from': u'0'}
-        for response in zabbix_api.obj["result"]:
-            HostId=response["hostid"]
-            Host=response["host"]
-            HostName=response["name"]
-            if not "host" in self.history: self.history["host"]={}
-            if not HostId in self.history["host"]: self.history["host"][HostId]={"host":Host, "name":HostName}
-
         # read all triggers
         #{u'status': u'0', u'description': u'Zabbix agent on {HOST.NAME} is unreachable for 5 minutes', u'state': u'0', u'url': u'', u'type': u'0', u'templateid': u'10047', u'lastchange': u'1450299270', u'value': u'1', u'priority': u'3', u'triggerid': u'13491', u'flags': u'0', u'comments': u'', u'error': u'', u'expression': u'{12900}=1'}
-        self.generic_method("trigger.get",{ "output": ["triggerid", "templateid", "lastchange", "description", "value", "priority"], "selectGroups":"groupid", "selectHosts":"hostid"})
+        self.generic_method("trigger.get",{ "output": ["triggerid", "templateid", "lastchange", "description", "value", "priority"]})
         for response in zabbix_api.obj["result"]:
             TriggerId=response["triggerid"]
-            TemplateId=response["templateid"]
-            LastChange=response["lastchange"]
-            Description=response["description"]
-            Value=response["value"]
-            Priority=response["priority"]
-            if not "trigger" in self.history: self.history["trigger"]={}
-            if not TriggerId in self.history["trigger"]: self.history["trigger"][TriggerId]={"templateid":TemplateId, "lastchange":LastChange, "value":Value, "priority":Priority, "description": Description}
-            for Hosts in response["hosts"]:
-                HostId=Hosts["hostid"]
-                if HostId in self.history["host"]: 
-                    HostName=self.history["host"][HostId]["name"]
-                else:
-                    HostName="N/A"
-                self.history["trigger"][TriggerId]={"templateid":TemplateId, "lastchange":LastChange, "value":Value, "priority":Priority, "description": Description, "hostname":HostName}
-                if int(Value)==1: print "Active trigger [%s] on host [%s] with priority [%s]. Last change [%s]" % (Description, HostName, Priority, LastChange)
+            self.get_zabbix_trigger(TriggerId)
+            if int(response["value"])==1: 
+                print "Active trigger [%s] on host [%s] with priority [%s]. Last change [%s]" % (self.history["trigger"][TriggerId]["description"], self.history["trigger"][TriggerId]["host"], self.history["trigger"][TriggerId]["priority"], self.history["trigger"][TriggerId]["lastchange"])
     
         # read all events info
         self.generic_method("event.get",{ "output": "extend", "selectHosts":"extend", "sortfield": ["eventid"] })
         for response in zabbix_api.obj["result"]:
             #print response
-            # ObjectId = TriggerId
             EventId=response["eventid"]
             EventTime=response["clock"]
+            # ObjectId = TriggerId
             TriggerId=response["objectid"]
             #self.generic_method("trigger.get",{ "output": "extend", "triggerids": response["objectid"] })
             TemplateId=self.history["trigger"][TriggerId]["templateid"]
@@ -397,13 +418,11 @@ class api:
             TriggerDescription=self.history["trigger"][TriggerId]["description"]
             if "lastdata" not in self.history: self.history["lastdata"]={}
             if "event" not in self.history["lastdata"]: self.history["lastdata"]["event"]=0
-            if EventId>self.history["lastdata"]["event"]:
-                Time=strftime("%d/%m/%y %H:%M:%S",localtime(int(response["clock"])))
-                LastTime=strftime("%d/%m/%y %H:%M:%S",localtime(int(TriggerLastChange)))
-                print "%s - eventid[%s] - templateid[%s] - Host[%s] - TriggerId[%s] - TriggerValue[%s] - TriggerPriority[%s] - TriggerLastChange[%s] - TriggerDescription[%s]"  % (Time, EventId, TemplateId, TemplateHost, TriggerId, TriggerValue, TriggerPriority, LastTime, TriggerDescription)
-                self.history["lastdata"]["event"]=EventId
-            else:
-                print EventId
+            #if EventId>self.history["lastdata"]["event"]:
+            Time=strftime("%d/%m/%y %H:%M:%S",localtime(int(response["clock"])))
+            LastTime=strftime("%d/%m/%y %H:%M:%S",localtime(int(TriggerLastChange)))
+            #print "%s - eventid[%s] - templateid[%s] - Host[%s] - TriggerId[%s] - TriggerValue[%s] - TriggerPriority[%s] - TriggerLastChange[%s] - TriggerDescription[%s]"  % (Time, EventId, TemplateId, TemplateHost, TriggerId, TriggerValue, TriggerPriority, LastTime, TriggerDescription)
+            self.history["lastdata"]["event"]=EventId
         
     '''
     Load history
