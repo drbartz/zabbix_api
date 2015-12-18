@@ -5,7 +5,7 @@ except ImportError:
 
 import urllib2, socket
 import cPickle as pickle
-from time import strftime, localtime
+from time import strftime, localtime, time
 
 def postRequest(obj):
     #print obj
@@ -101,12 +101,12 @@ class api:
         # translate from: https://www.zabbix.com/documentation/2.4/manual/api/reference/trigger/object
         self.api_translate["trigger"] = {
                 "priority": { 
-                    "(default) not classified":    0,
-                    "information":    1,
-                    "warning":    2,
-                    "average":    3,
-                    "high":    4,
-                    "disater":    5,
+                    0: "N/A",
+                    1: "information",
+                    2: "warning",
+                    3: "average",
+                    4: "high",
+                    5: "disater"
                 }
         }
 
@@ -363,24 +363,46 @@ class api:
     ''' 
     Load Zabbix trigger info
     '''
-    def get_zabbix_trigger(self, TriggerId):
+    def get_zabbix_trigger(self, TriggerId, lastchange=0):
+        Update=False
+        CurrentTime=int(time())
         if not "trigger" in self.history: self.history["trigger"]={}
         if not TriggerId in self.history["trigger"]:
             print "looking for triggerid [%s]" % (TriggerId)
-            self.history["trigger"][TriggerId]={"templateid":"N/A", "lastchange":"N/A", "value":"N/A", "priority":"N/A", "description": "N/A", "host": "N/A"}
+            self.history["trigger"][TriggerId]={"templateid":"N/A", "lastchange":lastchange, "value":"N/A", "priority":"N/A", "description": "N/A", "host": "N/A", "lastupdate": CurrentTime}
+            Update=True
+        # Check if lastchange on Zabbix trigger is newer than the stored one
+        if (int(lastchange) > int(self.history["trigger"][TriggerId]["lastchange"])): Update=True
+        # Check if the stored information is older than 1 hour
+        if (int(CurrentTime) > int(self.history["trigger"][TriggerId]["lastupdate"]+3600)): Update=True
+        if Update: 
             self.generic_method("trigger.get",{ "output": ["triggerid", "templateid", "lastchange", "description", "value", "priority"], "selectGroups":"groupid", "selectHosts":"hostid"})
             for response in zabbix_api.obj["result"]:
                 if TriggerId==response["triggerid"]:
-                    self.history["trigger"][TriggerId]["templateid"]=response["templateid"]
-                    self.get_zabbix_template(response["templateid"])
-                    self.history["trigger"][TriggerId]["lastchange"]=response["lastchange"]
-                    self.history["trigger"][TriggerId]["description"]=response["description"]
-                    self.history["trigger"][TriggerId]["value"]=response["value"]
-                    self.history["trigger"][TriggerId]["priority"]=response["priority"]
                     for Hosts in response["hosts"]:
                         self.get_zabbix_host(Hosts["hostid"])
                         self.history["trigger"][TriggerId]["host"]=self.history["host"][Hosts["hostid"]]["host"]
+                        self.history["trigger"][TriggerId]["templateid"]=response["templateid"]
+                        self.get_zabbix_template(response["templateid"])
+                        self.history["trigger"][TriggerId]["lastchange"]=response["lastchange"]
+                        self.history["trigger"][TriggerId]["lastupdate"]=CurrentTime
+                        self.history["trigger"][TriggerId]["description"]=response["description"]
+                        self.history["trigger"][TriggerId]["value"]=response["value"]
+                        self.history["trigger"][TriggerId]["priority"]=response["priority"]
     
+    ''' 
+    Print Zabbix Trigger
+    '''
+    def print_zabbix_trigger(self, TriggerId):
+        if int(self.history["trigger"][TriggerId]["value"])==1:
+            Value="Active"
+        else:
+            Value="Inactive"
+        Priority=self.api_translate["trigger"]["priority"][int(self.history["trigger"][TriggerId]["priority"])]
+        LastChange=strftime("%d/%m/%y %H:%M:%S",localtime(int(self.history["trigger"][TriggerId]["lastchange"])))
+        Now=strftime("%d/%m/%y %H:%M:%S",localtime())
+        print "%s - Trigger:[%s] description:[%s] host:[%s] priority:[%s] Lastchange:[%s]" % (Now, Value, self.history["trigger"][TriggerId]["description"], self.history["trigger"][TriggerId]["host"], Priority, LastChange)
+
     ''' 
     Get zabbix status
     '''
@@ -389,40 +411,40 @@ class api:
         for item in self.api_translate["trigger"]["priority"]:
             Priority[self.api_translate["trigger"]["priority"][item]]=item
 
-        # read all triggers
-        #{u'status': u'0', u'description': u'Zabbix agent on {HOST.NAME} is unreachable for 5 minutes', u'state': u'0', u'url': u'', u'type': u'0', u'templateid': u'10047', u'lastchange': u'1450299270', u'value': u'1', u'priority': u'3', u'triggerid': u'13491', u'flags': u'0', u'comments': u'', u'error': u'', u'expression': u'{12900}=1'}
-        self.generic_method("trigger.get",{ "output": ["triggerid", "templateid", "lastchange", "description", "value", "priority"]})
+        # read lastchange and value of all triggers
+        self.generic_method("trigger.get",{ "output": ["triggerid", "lastchange", "value"]})
         for response in zabbix_api.obj["result"]:
             TriggerId=response["triggerid"]
-            self.get_zabbix_trigger(TriggerId)
+            #for active triggers
             if int(response["value"])==1: 
-                print "Active trigger [%s] on host [%s] with priority [%s]. Last change [%s]" % (self.history["trigger"][TriggerId]["description"], self.history["trigger"][TriggerId]["host"], self.history["trigger"][TriggerId]["priority"], self.history["trigger"][TriggerId]["lastchange"])
+                self.get_zabbix_trigger(TriggerId, response["lastchange"])
+                self.print_zabbix_trigger(TriggerId)
     
-        # read all events info
-        self.generic_method("event.get",{ "output": "extend", "selectHosts":"extend", "sortfield": ["eventid"] })
-        for response in zabbix_api.obj["result"]:
+        ## read all events info
+        #self.generic_method("event.get",{ "output": "extend", "selectHosts":"extend", "sortfield": ["eventid"] })
+        #for response in zabbix_api.obj["result"]:
             #print response
-            EventId=response["eventid"]
-            EventTime=response["clock"]
-            # ObjectId = TriggerId
-            TriggerId=response["objectid"]
-            #self.generic_method("trigger.get",{ "output": "extend", "triggerids": response["objectid"] })
-            TemplateId=self.history["trigger"][TriggerId]["templateid"]
-            if TemplateId in self.history["template"]:
-                TemplateHost=self.history["template"][TemplateId]["host"]
-            else:
-                TemplateHost="N/A"
-            TriggerValue=self.history["trigger"][TriggerId]["value"]
-            TriggerPriority=self.history["trigger"][TriggerId]["priority"]
-            TriggerLastChange=self.history["trigger"][TriggerId]["lastchange"]
-            TriggerDescription=self.history["trigger"][TriggerId]["description"]
-            if "lastdata" not in self.history: self.history["lastdata"]={}
-            if "event" not in self.history["lastdata"]: self.history["lastdata"]["event"]=0
-            #if EventId>self.history["lastdata"]["event"]:
-            Time=strftime("%d/%m/%y %H:%M:%S",localtime(int(response["clock"])))
-            LastTime=strftime("%d/%m/%y %H:%M:%S",localtime(int(TriggerLastChange)))
-            #print "%s - eventid[%s] - templateid[%s] - Host[%s] - TriggerId[%s] - TriggerValue[%s] - TriggerPriority[%s] - TriggerLastChange[%s] - TriggerDescription[%s]"  % (Time, EventId, TemplateId, TemplateHost, TriggerId, TriggerValue, TriggerPriority, LastTime, TriggerDescription)
-            self.history["lastdata"]["event"]=EventId
+            #EventId=response["eventid"]
+            #EventTime=response["clock"]
+            ## ObjectId = TriggerId
+            #TriggerId=response["objectid"]
+            #self.get_zabbix_trigger(TriggerId)
+            #TemplateId=self.history["trigger"][TriggerId]["templateid"]
+            #if TemplateId in self.history["template"]:
+                #TemplateHost=self.history["template"][TemplateId]["host"]
+            #else:
+                #TemplateHost="N/A"
+            #TriggerValue=self.history["trigger"][TriggerId]["value"]
+            #TriggerPriority=self.history["trigger"][TriggerId]["priority"]
+            #TriggerLastChange=self.history["trigger"][TriggerId]["lastchange"]
+            #TriggerDescription=self.history["trigger"][TriggerId]["description"]
+            #if "lastdata" not in self.history: self.history["lastdata"]={}
+            #if "event" not in self.history["lastdata"]: self.history["lastdata"]["event"]=0
+            ##if EventId>self.history["lastdata"]["event"]:
+            #Time=strftime("%d/%m/%y %H:%M:%S",localtime(int(response["clock"])))
+            #LastTime=strftime("%d/%m/%y %H:%M:%S",localtime(int(TriggerLastChange)))
+            ##print "%s - eventid[%s] - templateid[%s] - Host[%s] - TriggerId[%s] - TriggerValue[%s] - TriggerPriority[%s] - TriggerLastChange[%s] - TriggerDescription[%s]"  % (Time, EventId, TemplateId, TemplateHost, TriggerId, TriggerValue, TriggerPriority, LastTime, TriggerDescription)
+            #self.history["lastdata"]["event"]=EventId
         
     '''
     Load history
@@ -459,7 +481,7 @@ class api:
 #####print zabbix_api.api_translate
 hostname = socket.gethostname()
 
-print socket.gethostname().split(".")[0]
+#print socket.gethostname().split(".")[0]
 zabbix_api = api()
 zabbix_api.login("admin", "zabbix")
 zabbix_api.history_load(".api_history")
